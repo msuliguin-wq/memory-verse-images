@@ -1,0 +1,55 @@
+name: Daily Instagram Verse Post
+
+on:
+  schedule:
+    # 23:30 UTC = 7:30 AM Philippine Time (UTC+8)
+    - cron: "30 23 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate card and publish to Instagram
+        id: post
+        run: |
+          python post.py \
+            --ig-user-id "${{ secrets.IG_USER_ID }}" \
+            --access-token "${{ secrets.IG_ACCESS_TOKEN }}" \
+            --github-owner "${{ github.repository_owner }}" \
+            --github-repo "${{ github.event.repository.name }}" \
+            --github-token "${{ secrets.GITHUB_TOKEN }}" \
+            | tee post_output.txt
+          echo "new_token=$(grep '^NEW_TOKEN=' post_output.txt | cut -d= -f2-)" >> "$GITHUB_OUTPUT"
+
+      - name: Rotate access token secret (if refreshed)
+        if: steps.post.outputs.new_token != ''
+        env:
+          GH_TOKEN: ${{ secrets.REPO_ADMIN_PAT }}
+          NEW_TOKEN: ${{ steps.post.outputs.new_token }}
+        run: |
+          if [ -n "$GH_TOKEN" ]; then
+            gh secret set IG_ACCESS_TOKEN --body "$NEW_TOKEN" --repo "${{ github.repository }}"
+            echo "Rotated IG_ACCESS_TOKEN secret automatically."
+          else
+            echo "No REPO_ADMIN_PAT secret set, so the refreshed token below was NOT saved automatically."
+            echo "The current IG_ACCESS_TOKEN secret is still valid for a while, but for uninterrupted"
+            echo "posting, either (a) add a REPO_ADMIN_PAT secret (a fine-grained GitHub PAT for this"
+            echo "repo with Contents + Secrets: read/write) so this step can rotate it automatically, or"
+            echo "(b) manually update the IG_ACCESS_TOKEN secret with the new token printed above every"
+            echo "couple of months."
+          fi
