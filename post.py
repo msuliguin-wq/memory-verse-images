@@ -5,15 +5,22 @@ End-to-end daily Bible verse -> Instagram poster.
 Flow:
   1. Pick today's verse (deterministic by day-of-year).
   2. Render the card image (photo_card.py — real photo backgrounds).
-  3. Upload the image to a public GitHub repo (Contents API) to get a
-     public raw.githubusercontent.com URL. (Imgur's anonymous app
+  3. Generate spoken narration of the verse (narrate.py, edge-tts) and mix
+     it with a background music bed into a 1080x1920 video Reel
+     (make_reel.py, ffmpeg) with a slow Ken Burns zoom on the card.
+     (--static-image falls back to the old plain-image post instead.)
+  4. Upload the image or video to a public GitHub repo (Contents API) to
+     get a public raw.githubusercontent.com URL. (Imgur's anonymous app
      registration was blocked for this brand-new account, so GitHub is
-     used as the public image host instead.)
-  4. Create an Instagram media container (Graph API) and publish it.
-  5. Optionally refresh the long-lived access token and print the new one
+     used as the public asset host instead.)
+  5. Create an Instagram media container (Graph API) and publish it.
+  6. Optionally refresh the long-lived access token and print the new one
      so the caller can rotate it into the next day's stored credentials.
 
-Requires: requests (pip install requests --break-system-packages)
+Requires: requests, edge-tts (pip install -r requirements.txt) and
+ffmpeg/ffprobe on PATH. edge-tts needs real internet access (it's blocked
+from some sandboxed dev environments) — this is designed to run on a
+GitHub Actions runner.
 """
 import argparse
 import base64
@@ -26,6 +33,8 @@ import requests
 
 from photo_card import load_verses, pick_verse, generate
 from caption import build_caption
+from narrate import narrate, build_narration_script
+from make_reel import make_reel
 
 GRAPH_API_VERSION = "v21.0"
 # Instagram API with Instagram Login (no linked Facebook Page required).
@@ -34,15 +43,34 @@ GRAPH_BASE = "https://graph.instagram.com"
 IG_OAUTH_BASE = "https://api.instagram.com/oauth"
 GITHUB_API_BASE = "https://api.github.com"
 
+# Background music bed for the narrated reel. Pixabay Content License track
+# ("Calm Piano Background" by VibeHorn) — free for this use, no attribution
+# required. Downloaded fresh each run (not committed to the repo) so the
+# repo stays lean; this direct download URL is expected to stay stable, but
+# if Pixabay ever rotates it, update this constant.
+MUSIC_URL = (
+    "https://cdn.pixabay.com/download/audio/2026/06/09/audio_3f76d66c89.mp3"
+    "?filename=vibehorn-calm-piano-background-539083.mp3"
+)
 
-def upload_to_github(image_path, owner, repo, token, branch="main"):
-    """Uploads the image to a public GitHub repo via the Contents API and
+
+def download_music(dest_path, url=MUSIC_URL):
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    with open(dest_path, "wb") as f:
+        f.write(resp.content)
+    return dest_path
+
+
+def upload_to_github(local_path, owner, repo, token, branch="main",
+                      folder="cards", ext="png"):
+    """Uploads a file to a public GitHub repo via the Contents API and
     returns its public raw.githubusercontent.com URL. Path is unique per
     day so nothing gets overwritten."""
     date_str = datetime.date.today().isoformat()
-    path = f"cards/{date_str}.png"
+    path = f"{folder}/{date_str}.{ext}"
 
-    with open(image_path, "rb") as f:
+    with open(local_path, "rb") as f:
         content_b64 = base64.b64encode(f.read()).decode("ascii")
 
     headers = {
@@ -67,13 +95,13 @@ def upload_to_github(image_path, owner, repo, token, branch="main"):
         raise RuntimeError(f"GitHub lookup failed: {get_resp.status_code} {get_resp.text}")
 
     payload = {
-        "message": f"Add verse card {date_str}",
+        "message": f"Add {folder} asset {date_str}",
         "content": content_b64,
         "branch": branch,
     }
     if existing_sha:
         payload["sha"] = existing_sha
-        payload["message"] = f"Update verse card {date_str}"
+        payload["message"] = f"Update {folder} asset {date_str}"
 
     resp = requests.put(
         f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{path}",
@@ -87,15 +115,25 @@ def upload_to_github(image_path, owner, repo, token, branch="main"):
     return data["content"]["download_url"]
 
 
-def publish_to_instagram(ig_user_id, access_token, image_url, caption):
+def publish_to_instagram(ig_user_id, access_token, caption, image_url=None,
+                          video_url=None, max_wait_seconds=180):
+    """Publishes either a static image (image_url) or a Reel (video_url).
+    Exactly one of image_url/video_url should be set. Video containers take
+    much longer to process than images, so we poll longer for those."""
+    if bool(image_url) == bool(video_url):
+        raise ValueError("Pass exactly one of image_url or video_url")
+
     # Step 1: create media container
+    data = {"caption": caption, "access_token": access_token}
+    if video_url:
+        data["media_type"] = "REELS"
+        data["video_url"] = video_url
+    else:
+        data["image_url"] = image_url
+
     create_resp = requests.post(
         f"{GRAPH_BASE}/{ig_user_id}/media",
-        data={
-            "image_url": image_url,
-            "caption": caption,
-            "access_token": access_token,
-        },
+        data=data,
         timeout=30,
     )
     create_data = create_resp.json()
@@ -103,8 +141,11 @@ def publish_to_instagram(ig_user_id, access_token, image_url, caption):
         raise RuntimeError(f"Media container creation failed: {create_data}")
     creation_id = create_data["id"]
 
-    # Step 2: poll container status until FINISHED (usually instant for image_url)
-    for _ in range(10):
+    # Step 2: poll container status until FINISHED. Images finish almost
+    # instantly; video containers can take a minute or more to transcode.
+    poll_interval = 3
+    attempts = max(1, max_wait_seconds // poll_interval)
+    for _ in range(attempts):
         status_resp = requests.get(
             f"{GRAPH_BASE}/{creation_id}",
             params={"fields": "status_code", "access_token": access_token},
@@ -115,7 +156,9 @@ def publish_to_instagram(ig_user_id, access_token, image_url, caption):
             break
         if status == "ERROR":
             raise RuntimeError(f"Media container processing failed: {status_resp.json()}")
-        time.sleep(2)
+        time.sleep(poll_interval)
+    else:
+        raise RuntimeError(f"Media container did not finish processing within {max_wait_seconds}s")
 
     # Step 3: publish
     publish_resp = requests.post(
@@ -196,11 +239,15 @@ def main():
     p.add_argument("--app-secret", default=None, help="Meta App secret (unused, kept for compat)")
     p.add_argument("--dry-run", action="store_true", help="Generate everything but skip GitHub/Instagram calls")
     p.add_argument("--verse-index", default=None, help="Force a specific verse index instead of date-based pick")
+    p.add_argument("--static-image", action="store_true",
+                    help="Post the classic static image card instead of a narrated video Reel")
+    p.add_argument("--voice", default=None, help="edge-tts voice override (see narrate.py DEFAULT_VOICE)")
     args = p.parse_args()
 
     verses = load_verses()
     verse, idx = pick_verse(verses, args.verse_index)
-    image_path = f"/tmp/verse_card_{datetime.date.today().isoformat()}.png"
+    date_str = datetime.date.today().isoformat()
+    image_path = f"/tmp/verse_card_{date_str}.png"
     day_of_year = datetime.date.today().timetuple().tm_yday
     generate(verse, idx=idx, day_number=day_of_year, brand=args.brand, output_path=image_path)
     caption = build_caption(verse, idx, brand=args.brand)
@@ -211,14 +258,38 @@ def main():
     print("CAPTION_PREVIEW:")
     print(caption)
 
+    reel_path = None
+    if not args.static_image:
+        script = build_narration_script(verse)
+        narration_path = f"/tmp/narration_{date_str}.mp3"
+        narrate_kwargs = {"voice": args.voice} if args.voice else {}
+        narrate(script, narration_path, **narrate_kwargs)
+        print(f"NARRATION_PATH={narration_path}")
+
+        music_path = f"/tmp/music_{date_str}.mp3"
+        download_music(music_path)
+        print(f"MUSIC_PATH={music_path}")
+
+        reel_path = f"/tmp/reel_{date_str}.mp4"
+        _, reel_duration = make_reel(image_path, narration_path, music_path, reel_path)
+        print(f"REEL_PATH={reel_path}")
+        print(f"REEL_DURATION={reel_duration:.2f}")
+
     if args.dry_run:
         print("DRY_RUN_OK")
         return
 
-    image_url = upload_to_github(image_path, args.github_owner, args.github_repo, args.github_token)
-    print(f"IMAGE_URL={image_url}")
+    if reel_path:
+        video_url = upload_to_github(reel_path, args.github_owner, args.github_repo,
+                                      args.github_token, folder="reels", ext="mp4")
+        print(f"VIDEO_URL={video_url}")
+        post_id = publish_to_instagram(args.ig_user_id, args.access_token, caption, video_url=video_url)
+    else:
+        image_url = upload_to_github(image_path, args.github_owner, args.github_repo,
+                                      args.github_token, folder="cards", ext="png")
+        print(f"IMAGE_URL={image_url}")
+        post_id = publish_to_instagram(args.ig_user_id, args.access_token, caption, image_url=image_url)
 
-    post_id = publish_to_instagram(args.ig_user_id, args.access_token, image_url, caption)
     print(f"POST_SUCCESS post_id={post_id}")
 
     # Instagram Login long-lived tokens (~60 days) refresh with just the
