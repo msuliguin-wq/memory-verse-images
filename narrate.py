@@ -18,10 +18,10 @@ import asyncio
 
 import edge_tts
 
-# Warm, clear female voice — reads well for devotional/faith content.
-# Alternatives: en-US-AriaNeural, en-US-EmmaNeural (female); en-US-GuyNeural,
-# en-US-ChristopherNeural (male).
-DEFAULT_VOICE = "en-US-JennyNeural"
+# Expressive female voice — chosen by comparing real edge-tts samples.
+# Alternatives: en-US-JennyNeural, en-US-EmmaNeural, en-US-AvaNeural (female);
+# en-US-AndrewNeural, en-US-ChristopherNeural (male).
+DEFAULT_VOICE = "en-US-AriaNeural"
 DEFAULT_RATE = "-10%"  # slightly slower than default for a reverent, unhurried pace
 
 
