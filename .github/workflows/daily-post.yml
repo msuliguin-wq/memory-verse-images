@@ -92,6 +92,17 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
+      - name: Commit reel preview to repo (temporary, dry-run only)
+        if: always() && github.event.inputs.dry_run == 'true' && github.event.inputs.voice_samples != 'true'
+        run: |
+          mkdir -p reel_preview
+          cp /tmp/reel_*.mp4 reel_preview/ 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reel_preview
+          git commit -m "Add reel preview file (temporary)" || echo "Nothing to commit"
+          git push
+
       - name: Rotate access token secret (if refreshed)
         if: steps.post.outputs.new_token != ''
         env:
