@@ -45,17 +45,40 @@ def upload_to_github(image_path, owner, repo, token, branch="main"):
     with open(image_path, "rb") as f:
         content_b64 = base64.b64encode(f.read()).decode("ascii")
 
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    # If a file already exists at this path (e.g. a re-run on the same UTC
+    # calendar date), the Contents API requires its current blob sha to
+    # update it -- otherwise it 422s. Look it up first; a fresh path (404)
+    # is the normal case and just means "create new".
+    existing_sha = None
+    get_resp = requests.get(
+        f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{path}",
+        headers=headers,
+        params={"ref": branch},
+        timeout=30,
+    )
+    if get_resp.status_code == 200:
+        existing_sha = get_resp.json().get("sha")
+    elif get_resp.status_code not in (404,):
+        raise RuntimeError(f"GitHub lookup failed: {get_resp.status_code} {get_resp.text}")
+
+    payload = {
+        "message": f"Add verse card {date_str}",
+        "content": content_b64,
+        "branch": branch,
+    }
+    if existing_sha:
+        payload["sha"] = existing_sha
+        payload["message"] = f"Update verse card {date_str}"
+
     resp = requests.put(
         f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{path}",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-        },
-        json={
-            "message": f"Add verse card {date_str}",
-            "content": content_b64,
-            "branch": branch,
-        },
+        headers=headers,
+        json=payload,
         timeout=30,
     )
     if resp.status_code not in (200, 201):
