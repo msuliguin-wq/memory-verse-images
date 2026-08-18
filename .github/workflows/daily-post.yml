@@ -4,7 +4,16 @@ on:
   schedule:
     # 23:30 UTC = 7:30 AM Philippine Time (UTC+8)
     - cron: "30 23 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Generate the reel but do NOT publish to Instagram (preview only)"
+        type: boolean
+        default: false
+      voice_samples:
+        description: "Instead of posting, generate short narration samples across several voices for comparison"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -27,20 +36,50 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Generate voice samples (preview only, no posting)
+        if: github.event.inputs.voice_samples == 'true'
+        run: python voice_samples.py --outdir /tmp/voice_samples
+
+      - name: Upload voice samples artifact
+        if: github.event.inputs.voice_samples == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-samples
+          path: /tmp/voice_samples/*.mp3
+          if-no-files-found: error
+          retention-days: 3
+
       - name: Generate reel and publish to Instagram
         id: post
+        if: github.event.inputs.voice_samples != 'true'
         run: |
           set -o pipefail
+          DRY_RUN_FLAG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
           python post.py \
             --ig-user-id "${{ secrets.IG_USER_ID }}" \
             --access-token "${{ secrets.IG_ACCESS_TOKEN }}" \
             --github-owner "${{ github.repository_owner }}" \
             --github-repo "${{ github.event.repository.name }}" \
             --github-token "${{ secrets.GITHUB_TOKEN }}" \
+            $DRY_RUN_FLAG \
             | tee post_output.txt
           # pipefail above makes this step fail (non-zero) if python itself
           # crashed, instead of silently reporting tee's exit code (0).
           echo "new_token=$(grep '^NEW_TOKEN=' post_output.txt | cut -d= -f2-)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload reel preview artifact
+        if: always() && github.event.inputs.voice_samples != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: reel-preview
+          path: |
+            /tmp/reel_*.mp4
+            /tmp/narration_*.mp3
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Rotate access token secret (if refreshed)
         if: steps.post.outputs.new_token != ''
