@@ -27,6 +27,7 @@ jobs:
       - name: Generate card and publish to Instagram
         id: post
         run: |
+          set -o pipefail
           python post.py \
             --ig-user-id "${{ secrets.IG_USER_ID }}" \
             --access-token "${{ secrets.IG_ACCESS_TOKEN }}" \
@@ -34,6 +35,8 @@ jobs:
             --github-repo "${{ github.event.repository.name }}" \
             --github-token "${{ secrets.GITHUB_TOKEN }}" \
             | tee post_output.txt
+          # pipefail above makes this step fail (non-zero) if python itself
+          # crashed, instead of silently reporting tee's exit code (0).
           echo "new_token=$(grep '^NEW_TOKEN=' post_output.txt | cut -d= -f2-)" >> "$GITHUB_OUTPUT"
 
       - name: Rotate access token secret (if refreshed)
