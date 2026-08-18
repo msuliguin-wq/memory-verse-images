@@ -49,6 +49,17 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+      - name: Commit voice samples to repo (temporary preview)
+        if: github.event.inputs.voice_samples == 'true'
+        run: |
+          mkdir -p voice_samples_preview
+          cp /tmp/voice_samples/*.mp3 voice_samples_preview/
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add voice_samples_preview
+          git commit -m "Add voice sample preview files (temporary)" || echo "Nothing to commit"
+          git push
+
       - name: Generate reel and publish to Instagram
         id: post
         if: github.event.inputs.voice_samples != 'true'
