@@ -43,6 +43,20 @@ GRAPH_BASE = "https://graph.instagram.com"
 IG_OAUTH_BASE = "https://api.instagram.com/oauth"
 GITHUB_API_BASE = "https://api.github.com"
 
+# GitHub Actions runners use UTC. The daily cron fires at 23:30 UTC, which is
+# 7:30 AM Philippine Time (UTC+8) -- but that's still the *previous* calendar
+# day in UTC. Using datetime.date.today() (the runner's UTC date) for
+# "today's" verse/date_str meant the scheduled run picked the SAME calendar
+# date -- and therefore the same verse and asset path -- as any manual run
+# done earlier that same UTC day, which caused a real duplicate Instagram
+# post. Everything date-related below is computed in Philippine time instead
+# so "today" rolls over at the moment that matters for this brand's audience.
+PH_TZ = datetime.timezone(datetime.timedelta(hours=8))
+
+
+def today_ph():
+    return datetime.datetime.now(PH_TZ).date()
+
 # Background music bed for the narrated reel. Pixabay Content License track
 # ("Calm Piano Background" by VibeHorn) — free for this use, no attribution
 # required. Downloaded fresh each run (not committed to the repo) so the
@@ -67,7 +81,7 @@ def upload_to_github(local_path, owner, repo, token, branch="main",
     """Uploads a file to a public GitHub repo via the Contents API and
     returns its public raw.githubusercontent.com URL. Path is unique per
     day so nothing gets overwritten."""
-    date_str = datetime.date.today().isoformat()
+    date_str = today_ph().isoformat()
     path = f"{folder}/{date_str}.{ext}"
 
     with open(local_path, "rb") as f:
@@ -246,9 +260,10 @@ def main():
 
     verses = load_verses()
     verse, idx = pick_verse(verses, args.verse_index)
-    date_str = datetime.date.today().isoformat()
+    today = today_ph()
+    date_str = today.isoformat()
     image_path = f"/tmp/verse_card_{date_str}.png"
-    day_of_year = datetime.date.today().timetuple().tm_yday
+    day_of_year = today.timetuple().tm_yday
     generate(verse, idx=idx, day_number=day_of_year, brand=args.brand, output_path=image_path)
     caption = build_caption(verse, idx, brand=args.brand)
 

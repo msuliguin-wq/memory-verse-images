@@ -26,6 +26,19 @@ PANEL_TINT = (255, 250, 240, 150)  # frosted glass tint over blurred photo
 
 BACKGROUNDS_DIR = "backgrounds"
 
+# GitHub Actions runners use UTC. The daily cron fires at 23:30 UTC (7:30 AM
+# Philippine Time the *next* day), so date.today() on the runner still
+# reports the previous calendar day at that moment. Computing "today" in
+# Philippine time instead means the verse-of-the-day rolls over at the
+# right moment and won't collide with a manual run made earlier the same
+# UTC day.
+PH_TZ = datetime.timezone(datetime.timedelta(hours=8))
+
+
+def today_ph():
+    return datetime.datetime.now(PH_TZ).date()
+
+
 # Simple thematic mapping so the mood of the photo matches the verse.
 # Falls back to round-robin if a reference isn't explicitly mapped.
 THEME_MAP = {
@@ -49,7 +62,7 @@ def load_verses(path="verses.json"):
 
 def pick_verse(verses, key=None):
     if key is None:
-        day_of_year = datetime.date.today().timetuple().tm_yday
+        day_of_year = today_ph().timetuple().tm_yday
         idx = day_of_year % len(verses)
     else:
         idx = int(key) % len(verses)
@@ -221,6 +234,6 @@ if __name__ == "__main__":
     key = sys.argv[1] if len(sys.argv) > 1 else None
     out = sys.argv[2] if len(sys.argv) > 2 else "photo_sample.png"
     verse, idx = pick_verse(verses, key)
-    day_of_year = datetime.date.today().timetuple().tm_yday
+    day_of_year = today_ph().timetuple().tm_yday
     path, bg = generate(verse, idx=idx, day_number=day_of_year, output_path=out)
     print(f"idx={idx} ref={verse['reference']} bg={bg} -> {path}")
