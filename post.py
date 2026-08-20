@@ -264,7 +264,7 @@ def main():
     date_str = today.isoformat()
     image_path = f"/tmp/verse_card_{date_str}.png"
     day_of_year = today.timetuple().tm_yday
-    generate(verse, idx=idx, day_number=day_of_year, brand=args.brand, output_path=image_path)
+    generate(verse, idx=idx, day_number=day_of_year, brand=args.brand, verses=verses, output_path=image_path)
     caption = build_caption(verse, idx, brand=args.brand)
 
     print(f"VERSE_INDEX={idx}")

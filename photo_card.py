@@ -73,6 +73,43 @@ def pick_background(verse, idx):
     return REF_TO_BG.get(verse["reference"], BG_LIST[idx % len(BG_LIST)])
 
 
+_background_sequence_cache = {}
+
+
+def _compute_background_sequence(verses):
+    """Walks the full verse cycle in day order once and resolves every
+    consecutive-day collision, so shifting one day's background to avoid a
+    repeat can never just create a new repeat with the day after it (a
+    naive "only look at yesterday" check doesn't guarantee that -- fixing
+    one collision can chain into the next slot)."""
+    n = len(verses)
+    seq = []
+    for i in range(n):
+        bg = pick_background(verses[i], i)
+        if seq and bg == seq[-1]:
+            bg = BG_LIST[(BG_LIST.index(bg) + 1) % len(BG_LIST)]
+        seq.append(bg)
+    # The cycle also wraps (day 40 follows day 39 into day 0 of the next
+    # 40-day loop) -- fix that seam too, best-effort.
+    if len(seq) > 1 and seq[-1] == seq[0]:
+        seq[0] = BG_LIST[(BG_LIST.index(seq[0]) + 1) % len(BG_LIST)]
+    return seq
+
+
+def pick_background_no_repeat(verses, verse, idx):
+    """Like pick_background, but guarantees the result never matches the
+    background used for the immediately preceding calendar day. Several
+    verses intentionally share a themed background (e.g. both
+    "1 John 4:19" and "Psalm 118:24" use fig_tree_sun.jpg), so two
+    consecutive days can land on the same photo purely by chance -- this
+    resolves that across the whole cycle without changing any of the
+    deliberate verse-to-photo pairings."""
+    cache_key = id(verses)
+    if cache_key not in _background_sequence_cache:
+        _background_sequence_cache[cache_key] = _compute_background_sequence(verses)
+    return _background_sequence_cache[cache_key][idx % len(verses)]
+
+
 CROP_BIAS = {
     # 0.0 = crop from the very top, 1.0 = crop from the very bottom
     "poppy_field.jpg": 0.62,
@@ -141,8 +178,13 @@ def wrap_and_fit(draw, text, font_path, max_width, max_height, start_size=50, mi
 
 
 def generate(verse, idx=0, day_number=None, brand="Memory Verse For Today",
-             background=None, output_path="photo_card.png"):
-    bg_name = background or pick_background(verse, idx)
+             background=None, verses=None, output_path="photo_card.png"):
+    if background:
+        bg_name = background
+    elif verses:
+        bg_name = pick_background_no_repeat(verses, verse, idx)
+    else:
+        bg_name = pick_background(verse, idx)
     bg_path = os.path.join(BACKGROUNDS_DIR, bg_name)
     photo = Image.open(bg_path).convert("RGB")
     bias = CROP_BIAS.get(bg_name, 0.4)
@@ -235,5 +277,5 @@ if __name__ == "__main__":
     out = sys.argv[2] if len(sys.argv) > 2 else "photo_sample.png"
     verse, idx = pick_verse(verses, key)
     day_of_year = today_ph().timetuple().tm_yday
-    path, bg = generate(verse, idx=idx, day_number=day_of_year, output_path=out)
+    path, bg = generate(verse, idx=idx, day_number=day_of_year, verses=verses, output_path=out)
     print(f"idx={idx} ref={verse['reference']} bg={bg} -> {path}")
