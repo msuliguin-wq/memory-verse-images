@@ -14,6 +14,10 @@ on:
         description: "Instead of posting, generate short narration samples across several voices for comparison"
         type: boolean
         default: false
+      fetch_backgrounds:
+        description: "One-off: download the new background photos into backgrounds/ and commit them (does not post)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -60,9 +64,28 @@ jobs:
           git commit -m "Add voice sample preview files (temporary)" || echo "Nothing to commit"
           git push
 
+      - name: Fetch new background photos (one-off, does not post)
+        if: github.event.inputs.fetch_backgrounds == 'true'
+        run: |
+          mkdir -p backgrounds
+          curl -L -o backgrounds/mountain_sunrise.jpg "https://images.unsplash.com/photo-1540979388789-6cee28a1cdc9?w=1600&q=85&fm=jpg"
+          curl -L -o backgrounds/starry_night.jpg "https://images.unsplash.com/photo-1628498188904-036f5e25e93e?w=1600&q=85&fm=jpg"
+          curl -L -o backgrounds/wheat_field.jpg "https://images.unsplash.com/photo-1595024600400-2a49b9fce270?w=1600&q=85&fm=jpg"
+          curl -L -o backgrounds/still_lake.jpg "https://images.unsplash.com/photo-1621519997950-158b631341b6?w=1600&q=85&fm=jpg"
+          curl -L -o backgrounds/desert_path.jpg "https://images.unsplash.com/photo-1763805769160-7a0e20fa9915?w=1600&q=85&fm=jpg"
+          curl -L -o backgrounds/autumn_forest.jpg "https://images.unsplash.com/photo-1603312448224-e2d8c074ce26?w=1600&q=85&fm=jpg"
+          curl -L -o backgrounds/waterfall.jpg "https://images.unsplash.com/photo-1494472155656-f34e81b17ddc?w=1600&q=85&fm=jpg"
+          curl -L -o backgrounds/rolling_hills.jpg "https://images.unsplash.com/photo-1713669374349-3a240c47f727?w=1600&q=85&fm=jpg"
+          ls -la backgrounds/
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add backgrounds
+          git commit -m "Add 8 new background photos (12 total in rotation)" || echo "Nothing to commit"
+          git push
+
       - name: Generate reel and publish to Instagram
         id: post
-        if: github.event.inputs.voice_samples != 'true'
+        if: github.event.inputs.voice_samples != 'true' && github.event.inputs.fetch_backgrounds != 'true'
         run: |
           set -o pipefail
           DRY_RUN_FLAG=""
