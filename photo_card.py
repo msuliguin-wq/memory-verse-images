@@ -41,15 +41,33 @@ def today_ph():
 
 # Simple thematic mapping so the mood of the photo matches the verse.
 # Falls back to round-robin if a reference isn't explicitly mapped.
+# 12 backgrounds across all 40 verses, grouped by mood/imagery so each photo
+# still feels intentionally paired with its verses rather than random.
 THEME_MAP = {
-    "ocean_aerial.jpg": ["Psalm 23:1", "Isaiah 26:3", "John 14:27", "Psalm 46:1",
-                          "Isaiah 41:10", "Matthew 11:28", "Psalm 34:18", "Nahum 1:7"],
-    "redwood_forest.jpg": ["Joshua 1:9", "Deuteronomy 31:6", "Philippians 4:13",
-                            "Isaiah 40:31", "2 Timothy 1:7", "Hebrews 11:1", "Proverbs 18:10"],
-    "fig_tree_sun.jpg": ["Jeremiah 29:11", "John 3:16", "Romans 8:28", "Psalm 118:24",
-                          "Lamentations 3:22-23", "Psalm 30:5", "Psalm 16:11", "1 John 4:19"],
-    "poppy_field.jpg": ["Psalm 37:4", "Zephaniah 3:17", "Matthew 5:16", "Psalm 139:14",
-                         "Romans 15:13", "1 Corinthians 13:13", "Micah 6:8", "3 John 1:2"],
+    # calm / peace / rest -- open water
+    "ocean_aerial.jpg": ["Psalm 23:1", "Isaiah 26:3", "Psalm 46:1", "John 14:27"],
+    # strength / courage -- tall, sturdy trees
+    "redwood_forest.jpg": ["Joshua 1:9", "Deuteronomy 31:6", "2 Timothy 1:7"],
+    # love / hope / God's plans -- warm sunlit tree
+    "fig_tree_sun.jpg": ["Jeremiah 29:11", "John 3:16", "Romans 8:28", "1 John 4:19"],
+    # joy / delight / beauty -- wildflower field
+    "poppy_field.jpg": ["Psalm 37:4", "Zephaniah 3:17", "Matthew 5:16"],
+    # new beginnings / renewed strength -- dawn light
+    "mountain_sunrise.jpg": ["Isaiah 40:31", "Hebrews 11:1", "Lamentations 3:22-23", "Psalm 30:5"],
+    # God's vastness / guidance in darkness -- night sky
+    "starry_night.jpg": ["Psalm 119:105", "Psalm 27:1", "Revelation 21:4"],
+    # provision / growth / faithful work -- golden field
+    "wheat_field.jpg": ["Matthew 6:33", "Proverbs 16:3", "Romans 12:2", "Colossians 3:23"],
+    # peace / trust / quiet comfort -- still water
+    "still_lake.jpg": ["Isaiah 41:10", "Matthew 11:28", "Psalm 34:18"],
+    # guidance / protection on the journey -- open path
+    "desert_path.jpg": ["Proverbs 18:10", "2 Corinthians 5:17", "Nahum 1:7"],
+    # seasons / enduring hope and love -- changing leaves
+    "autumn_forest.jpg": ["1 Corinthians 13:13", "Romans 15:13", "3 John 1:2"],
+    # refreshment / renewal / casting cares -- flowing water
+    "waterfall.jpg": ["1 Peter 5:7", "Psalm 16:11", "Psalm 139:14"],
+    # abundance / faithfulness / a humble walk -- green hills
+    "rolling_hills.jpg": ["Philippians 4:13", "Psalm 118:24", "Micah 6:8"],
 }
 REF_TO_BG = {ref: bg for bg, refs in THEME_MAP.items() for ref in refs}
 BG_LIST = list(THEME_MAP.keys())
@@ -116,6 +134,14 @@ CROP_BIAS = {
     "fig_tree_sun.jpg": 0.30,
     "ocean_aerial.jpg": 0.50,
     "redwood_forest.jpg": 0.42,
+    "mountain_sunrise.jpg": 0.45,
+    "starry_night.jpg": 0.35,
+    "wheat_field.jpg": 0.55,
+    "still_lake.jpg": 0.45,
+    "desert_path.jpg": 0.50,
+    "autumn_forest.jpg": 0.40,
+    "waterfall.jpg": 0.40,
+    "rolling_hills.jpg": 0.55,
 }
 
 
